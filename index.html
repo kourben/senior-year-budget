@@ -34,13 +34,20 @@ body { font-family: system-ui; }
 </div>
 </div>
 
-<!-- Paycheck -->
+<!-- Paycheck Preview -->
 <div class="bg-white p-4 rounded-xl shadow mb-4">
 <input id="payInput" type="number" placeholder="Enter paycheck" class="w-full border p-3 rounded mb-2">
-<div class="flex space-x-2">
-<button onclick="allocatePaycheck()" class="bg-blue-600 text-white flex-1 py-2 rounded font-bold">Allocate</button>
+<div class="flex space-x-2 mb-2">
+<button onclick="allocatePaycheck()" class="bg-blue-600 text-white flex-1 py-2 rounded font-bold">Preview Allocation</button>
 <button onclick="undo()" class="bg-gray-500 text-white flex-1 py-2 rounded font-bold">Undo</button>
 <button onclick="resetAll()" class="bg-red-600 text-white flex-1 py-2 rounded font-bold">Reset</button>
+</div>
+<div id="preview" class="bg-gray-50 p-4 rounded-xl shadow">
+<h3 class="font-bold mb-2">Paycheck Allocation Preview</h3>
+<p>Wants: $<span id="previewWants">0.00</span></p>
+<p>Needs: $<span id="previewNeeds">0.00</span></p>
+<p>HYSA: $<span id="previewHysa">0.00</span></p>
+<p>Roth: $<span id="previewRoth">0.00</span></p>
 </div>
 </div>
 
@@ -101,28 +108,26 @@ let data = { wants:0, needs:0, roth:0, hysa:0, entries:[], history:[], weekCheck
 function save(){ localStorage.setItem("summerBudget", JSON.stringify(data)); }
 function load(){ const saved = localStorage.getItem("summerBudget"); if(saved) data = JSON.parse(saved); render(); }
 
-// Allocate Paycheck
+// Preview Allocation
 function allocatePaycheck(){
-const pay=parseFloat(document.getElementById("payInput").value);
-if(!pay) return;
-data.history.push(JSON.stringify(data)); // Save undo
+  const pay = parseFloat(document.getElementById("payInput").value);
+  if(!pay) return;
 
-const wantsPct=parseFloat(document.getElementById("wantsPct").value)/100;
-const needsPct=parseFloat(document.getElementById("needsPct").value)/100;
-const hysaPct=parseFloat(document.getElementById("hysaPct").value)/100;
+  const wantsPct = parseFloat(document.getElementById("wantsPct").value)/100;
+  const needsPct = parseFloat(document.getElementById("needsPct").value)/100;
+  const hysaPct = parseFloat(document.getElementById("hysaPct").value)/100;
 
-const wealth = pay*(1-wantsPct-needsPct);
-data.entries.push({amount: pay*wantsPct, note:"Paycheck Wants", date: new Date().toISOString().slice(0,10), category:"wants"});
-data.entries.push({amount: pay*needsPct, note:"Paycheck Needs", date: new Date().toISOString().slice(0,10), category:"needs"});
-data.entries.push({amount: wealth*hysaPct, note:"Paycheck HYSA", date: new Date().toISOString().slice(0,10), category:"hysa"});
-data.entries.push({amount: wealth*(1-hysaPct), note:"Paycheck Roth", date: new Date().toISOString().slice(0,10), category:"roth"});
+  const wealth = pay*(1-wantsPct-needsPct);
+  const wantsAmount = pay*wantsPct;
+  const needsAmount = pay*needsPct;
+  const hysaAmount = wealth*hysaPct;
+  const rothAmount = wealth*(1-hysaPct);
 
-data.wants += pay*wantsPct;
-data.needs += pay*needsPct;
-data.hysa += wealth*hysaPct;
-data.roth += wealth*(1-hysaPct);
-
-save(); render();
+  // Update preview only, no entries added
+  document.getElementById("previewWants").textContent = wantsAmount.toFixed(2);
+  document.getElementById("previewNeeds").textContent = needsAmount.toFixed(2);
+  document.getElementById("previewHysa").textContent = hysaAmount.toFixed(2);
+  document.getElementById("previewRoth").textContent = rothAmount.toFixed(2);
 }
 
 // Undo
@@ -148,10 +153,7 @@ const category=document.getElementById("category").value;
 if(!amount || !date) return;
 data.history.push(JSON.stringify(data));
 
-if(category==="roth" || category==="hysa"){
-data[category] += amount; // treat as investment
-}
-// Expenses are just recorded; no subtraction from wants/needs
+if(category==="roth" || category==="hysa"){ data[category] += amount; }
 data.entries.push({amount,note,date,category});
 save(); render();
 }
@@ -219,7 +221,7 @@ weeksHTML += `<div class="border-b py-2">
 <p class="text-sm text-gray-600">Total Spent: $${totalSpent.toFixed(2)}</p>
 <p class="text-sm mb-1">Investments: 
 <span class="checkbox ${data.weekChecks[weekId]?.roth?"checked":""}" onclick="toggleCheck('${weekId}','roth')">✅</span> Roth
-<span class="checkbox ${data.weekChecks[weekId]?.hysa?"checked":""}" onclick="toggleCheck('${weekId}','hysa')">✅</span> HYSA
+<span class="checkbox ${data.weekChecks[weekId]?.hysa?"checked":""}" onclick="toggleCheck('${weekId}','hysa')">✅</span>
 </p>
 <ul class="text-sm mt-1 space-y-1">
 ${weekEntries.map((e,i)=>`<li>${e.date} — $${e.amount.toFixed(2)} (${e.category})<br><span class="text-gray-500">${e.note}</span></li>`).join("")}
