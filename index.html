@@ -37,11 +37,7 @@ body { font-family: system-ui; }
 <!-- Paycheck Preview -->
 <div class="bg-white p-4 rounded-xl shadow mb-4">
 <input id="payInput" type="number" placeholder="Enter paycheck" class="w-full border p-3 rounded mb-2">
-<div class="flex space-x-2 mb-2">
-<button onclick="allocatePaycheck()" class="bg-blue-600 text-white flex-1 py-2 rounded font-bold">Preview Allocation</button>
-<button onclick="undo()" class="bg-gray-500 text-white flex-1 py-2 rounded font-bold">Undo</button>
-<button onclick="resetAll()" class="bg-red-600 text-white flex-1 py-2 rounded font-bold">Reset</button>
-</div>
+<button onclick="allocatePaycheck()" class="bg-blue-600 text-white w-full py-2 rounded font-bold mb-2">Preview Allocation</button>
 <div id="preview" class="bg-gray-50 p-4 rounded-xl shadow">
 <h3 class="font-bold mb-2">Paycheck Allocation Preview</h3>
 <p>Wants: $<span id="previewWants">0.00</span></p>
@@ -102,7 +98,7 @@ body { font-family: system-ui; }
 
 <script>
 // Data
-let data = { wants:0, needs:0, roth:0, hysa:0, entries:[], history:[], weekChecks:{} };
+let data = { entries:[], history:[], weekChecks:{}, paychecks:{} };
 
 // Save & Load
 function save(){ localStorage.setItem("summerBudget", JSON.stringify(data)); }
@@ -112,22 +108,14 @@ function load(){ const saved = localStorage.getItem("summerBudget"); if(saved) d
 function allocatePaycheck(){
   const pay = parseFloat(document.getElementById("payInput").value);
   if(!pay) return;
-
   const wantsPct = parseFloat(document.getElementById("wantsPct").value)/100;
   const needsPct = parseFloat(document.getElementById("needsPct").value)/100;
   const hysaPct = parseFloat(document.getElementById("hysaPct").value)/100;
-
   const wealth = pay*(1-wantsPct-needsPct);
-  const wantsAmount = pay*wantsPct;
-  const needsAmount = pay*needsPct;
-  const hysaAmount = wealth*hysaPct;
-  const rothAmount = wealth*(1-hysaPct);
-
-  // Update preview only, no entries added
-  document.getElementById("previewWants").textContent = wantsAmount.toFixed(2);
-  document.getElementById("previewNeeds").textContent = needsAmount.toFixed(2);
-  document.getElementById("previewHysa").textContent = hysaAmount.toFixed(2);
-  document.getElementById("previewRoth").textContent = rothAmount.toFixed(2);
+  document.getElementById("previewWants").textContent = (pay*wantsPct).toFixed(2);
+  document.getElementById("previewNeeds").textContent = (pay*needsPct).toFixed(2);
+  document.getElementById("previewHysa").textContent = (wealth*hysaPct).toFixed(2);
+  document.getElementById("previewRoth").textContent = (wealth*(1-hysaPct)).toFixed(2);
 }
 
 // Undo
@@ -140,11 +128,11 @@ save(); render();
 // Reset
 function resetAll(){ 
 if(!confirm("Clear all data?")) return;
-data={ wants:0, needs:0, roth:0, hysa:0, entries:[], history:[], weekChecks:{} };
+data={ entries:[], history:[], weekChecks:{}, paychecks:{} };
 save(); render();
 }
 
-// Add Entry (Expense or Investment)
+// Add Entry
 function addEntry(){
 const amount=parseFloat(document.getElementById("amount").value);
 const note=document.getElementById("note").value;
@@ -152,8 +140,6 @@ const date=document.getElementById("date").value;
 const category=document.getElementById("category").value;
 if(!amount || !date) return;
 data.history.push(JSON.stringify(data));
-
-if(category==="roth" || category==="hysa"){ data[category] += amount; }
 data.entries.push({amount,note,date,category});
 save(); render();
 }
@@ -165,16 +151,31 @@ data.weekChecks[weekId][type] = !data.weekChecks[weekId][type];
 save(); render();
 }
 
+// Add paycheck for week
+function addPaycheck(weekId){
+const val = parseFloat(document.getElementById('pay-'+weekId).value);
+if(!val) return;
+data.paychecks[weekId] = val;
+save(); render();
+}
+
 // Render
 let spendingChart, investChart;
 function render(){
+// Calculate totals
+let totalNeeds = data.entries.filter(e=>e.category==="needs").reduce((s,e)=>s+e.amount,0);
+let totalWants = data.entries.filter(e=>e.category==="wants").reduce((s,e)=>s+e.amount,0);
+let totalRoth = data.entries.filter(e=>e.category==="roth").reduce((s,e)=>s+e.amount,0);
+let totalHysa = data.entries.filter(e=>e.category==="hysa").reduce((s,e)=>s+e.amount,0);
+
 // Summary
 document.getElementById("summary").innerHTML=`
-<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Wants</h3><p>$${data.wants.toFixed(2)}</p></div>
-<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Needs</h3><p>$${data.needs.toFixed(2)}</p></div>
-<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Roth</h3><p>$${data.roth.toFixed(2)}</p></div>
-<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">HYSA</h3><p>$${data.hysa.toFixed(2)}</p></div>
+<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Wants</h3><p>$${totalWants.toFixed(2)}</p></div>
+<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Needs</h3><p>$${totalNeeds.toFixed(2)}</p></div>
+<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Roth</h3><p>$${totalRoth.toFixed(2)}</p></div>
+<div class="bg-white p-4 rounded shadow"><h3 class="font-bold">HYSA</h3><p>$${totalHysa.toFixed(2)}</p></div>
 `;
+
 updateCharts();
 updateProjection();
 updateWeekly();
@@ -195,7 +196,8 @@ investChart = new Chart(document.getElementById("investChart"),{type:"pie",data:
 
 // Roth Projection
 function updateProjection(){
-const future = data.roth*Math.pow(1+0.07,40);
+const totalRoth = data.entries.filter(e=>e.category==="roth").reduce((s,e)=>s+e.amount,0);
+const future = totalRoth*Math.pow(1+0.07,40);
 document.getElementById("projection").innerText = `$${future.toFixed(0)} at age ~60`;
 }
 
@@ -216,15 +218,16 @@ let weekEntries = data.entries.filter(e=>{
 });
 let totalSpent = weekEntries.filter(e=>e.category==="needs" || e.category==="wants").reduce((s,e)=>s+e.amount,0);
 
-weeksHTML += `<div class="border-b py-2">
+weeksHTML += `<div class="border-b py-2 mb-2">
 <h4 class="font-bold">Week of ${weekStart.toLocaleDateString()}</h4>
-<p class="text-sm text-gray-600">Total Spent: $${totalSpent.toFixed(2)}</p>
+<p class="text-sm text-gray-600 mb-1">Weekly Paycheck: $<input type="number" id="pay-${weekId}" value="${data.paychecks[weekId]||''}" class="border p-1 w-32 inline-block" onblur="addPaycheck('${weekId}')"></p>
+<p class="text-sm text-gray-600 mb-1">Total Spent: $${totalSpent.toFixed(2)}</p>
 <p class="text-sm mb-1">Investments: 
 <span class="checkbox ${data.weekChecks[weekId]?.roth?"checked":""}" onclick="toggleCheck('${weekId}','roth')">✅</span> Roth
 <span class="checkbox ${data.weekChecks[weekId]?.hysa?"checked":""}" onclick="toggleCheck('${weekId}','hysa')">✅</span>
 </p>
 <ul class="text-sm mt-1 space-y-1">
-${weekEntries.map((e,i)=>`<li>${e.date} — $${e.amount.toFixed(2)} (${e.category})<br><span class="text-gray-500">${e.note}</span></li>`).join("")}
+${weekEntries.map(e=>`<li>${e.date} — $${e.amount.toFixed(2)} (${e.category})<br><span class="text-gray-500">${e.note}</span></li>`).join("")}
 </ul>
 </div>`;
 
