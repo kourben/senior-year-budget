@@ -3,34 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Summer Budget Tracker</title>
+<title>Personal Budget Tracker</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 body { font-family: system-ui; }
 .card { transition: 0.3s; }
 .card:hover { transform: translateY(-4px); }
+.checkbox { display: inline-block; width: 1rem; height: 1rem; border: 2px solid #3b82f6; border-radius: 0.25rem; margin-right: 0.25rem; text-align:center; font-weight:bold; color:white; background:#3b82f6; }
 </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4">
 
 <div class="max-w-4xl mx-auto">
+<h1 class="text-3xl font-black text-center mb-6">Summer Budget Tracker (March – August)</h1>
 
-<h1 class="text-3xl font-black text-center mb-6">
-Summer Budget Tracker (March – August)
-</h1>
-
-<!-- HYSA Split -->
-<div class="bg-white p-4 rounded-xl shadow mb-4 flex items-center justify-between">
+<!-- Allocation Percentages -->
+<div class="bg-white p-4 rounded-xl shadow mb-4 flex flex-col md:flex-row items-center justify-between space-y-2 md:space-y-0">
+<div>
+<label class="font-bold">Wants %:</label>
+<input type="number" id="wantsPct" value="15" class="border p-2 rounded w-20">
+<label class="font-bold ml-2">Needs %:</label>
+<input type="number" id="needsPct" value="25" class="border p-2 rounded w-20">
+</div>
+<div>
 <label class="font-bold">HYSA % of Wealth:</label>
-<input type="number" id="hysaSplit" value="35" class="border p-2 rounded w-20">
-<span class="text-sm text-gray-500">Roth gets the rest</span>
+<input type="number" id="hysaPct" value="35" class="border p-2 rounded w-20">
+<span class="text-sm text-gray-500">Roth gets rest</span>
+</div>
 </div>
 
 <!-- Paycheck -->
 <div class="bg-white p-4 rounded-xl shadow mb-4">
 <input id="payInput" type="number" placeholder="Enter paycheck" class="w-full border p-3 rounded mb-2">
-<button onclick="allocatePaycheck()" class="bg-blue-600 text-white w-full py-3 rounded font-bold">Allocate 15/25/60</button>
+<div class="flex space-x-2">
+<button onclick="allocatePaycheck()" class="bg-blue-600 text-white flex-1 py-2 rounded font-bold">Allocate</button>
+<button onclick="undo()" class="bg-gray-500 text-white flex-1 py-2 rounded font-bold">Undo</button>
+<button onclick="resetAll()" class="bg-red-600 text-white flex-1 py-2 rounded font-bold">Reset</button>
+</div>
 </div>
 
 <!-- Summary -->
@@ -40,8 +50,8 @@ Summer Budget Tracker (March – August)
 <div class="bg-white p-4 rounded-xl shadow mb-4">
 <h2 class="font-bold mb-2">Add Expense</h2>
 <select id="category" class="border p-2 rounded w-full mb-2">
-<option value="needs">Needs (25%)</option>
-<option value="wants">Wants (15%)</option>
+<option value="needs">Needs</option>
+<option value="wants">Wants</option>
 </select>
 <input type="number" id="amount" placeholder="Amount" class="border p-2 rounded w-full mb-2">
 <input type="text" id="note" placeholder="Note" class="border p-2 rounded w-full mb-2">
@@ -67,12 +77,6 @@ Summer Budget Tracker (March – August)
 <p id="projection" class="text-lg font-bold"></p>
 </div>
 
-<!-- Monthly Summary -->
-<div class="bg-white p-4 rounded-xl shadow mb-4">
-<h3 class="font-bold mb-2">Monthly Summary</h3>
-<div id="monthly"></div>
-</div>
-
 <!-- Weekly Log -->
 <div class="bg-white p-4 rounded-xl shadow mb-4">
 <h3 class="font-bold mb-2">Weekly Log</h3>
@@ -87,84 +91,131 @@ Summer Budget Tracker (March – August)
 </div>
 
 <script>
-let data = { wants:0, needs:0, roth:0, hysa:0, expenses:[] };
-let spendingChart, investChart;
+// Data
+let data = { wants:0, needs:0, roth:0, hysa:0, expenses:[], history:[] };
 
-function save() { localStorage.setItem("summerBudget", JSON.stringify(data)); }
-function load() { const saved = localStorage.getItem("summerBudget"); if(saved) data = JSON.parse(saved); render(); }
+// Save & Load
+function save(){ localStorage.setItem("summerBudget", JSON.stringify(data)); }
+function load(){ const saved=localStorage.getItem("summerBudget"); if(saved) data=JSON.parse(saved); render(); }
 
-function allocatePaycheck() {
-const pay = parseFloat(document.getElementById("payInput").value); if(!pay) return;
-const wants = pay*0.15;
-const needs = pay*0.25;
-const wealth = pay*0.6;
-const hysaPercent = parseFloat(document.getElementById("hysaSplit").value)/100;
-data.wants += wants;
-data.needs += needs;
-data.hysa += wealth*hysaPercent;
-data.roth += wealth*(1-hysaPercent);
+// Allocation
+function allocatePaycheck(){
+const pay=parseFloat(document.getElementById("payInput").value);
+if(!pay) return;
+
+// save history for undo
+data.history.push(JSON.stringify(data));
+
+const wantsPct=parseFloat(document.getElementById("wantsPct").value)/100;
+const needsPct=parseFloat(document.getElementById("needsPct").value)/100;
+const hysaPct=parseFloat(document.getElementById("hysaPct").value)/100;
+const wealth=pay*(1-wantsPct-needsPct);
+
+data.wants += pay*wantsPct;
+data.needs += pay*needsPct;
+data.hysa += wealth*hysaPct;
+data.roth += wealth*(1-hysaPct);
+
 save(); render();
 }
 
-function addExpense() {
-const amount = parseFloat(document.getElementById("amount").value);
-const note = document.getElementById("note").value;
-const date = document.getElementById("date").value;
-const category = document.getElementById("category").value;
+// Undo
+function undo(){
+if(data.history.length===0) return alert("Nothing to undo");
+data=JSON.parse(data.history.pop());
+save(); render();
+}
+
+// Reset
+function resetAll(){
+if(!confirm("Clear all data?")) return;
+data={wants:0,needs:0,roth:0,hysa:0,expenses:[],history:[]};
+save(); render();
+}
+
+// Add Expense
+function addExpense(){
+const amount=parseFloat(document.getElementById("amount").value);
+const note=document.getElementById("note").value;
+const date=document.getElementById("date").value;
+const category=document.getElementById("category").value;
 if(!amount || !date) return;
-data[category] -= amount;
+data.history.push(JSON.stringify(data));
+data[category]-=amount;
 data.expenses.push({amount,note,date,category});
 save(); render();
 }
 
-function render() {
-document.getElementById("summary").innerHTML = `
+// Render
+let spendingChart, investChart;
+function render(){
+// Summary
+document.getElementById("summary").innerHTML=`
 <div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Wants</h3><p>$${data.wants.toFixed(2)}</p></div>
 <div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Needs</h3><p>$${data.needs.toFixed(2)}</p></div>
 <div class="bg-white p-4 rounded shadow"><h3 class="font-bold">Roth</h3><p>$${data.roth.toFixed(2)}</p></div>
 <div class="bg-white p-4 rounded shadow"><h3 class="font-bold">HYSA</h3><p>$${data.hysa.toFixed(2)}</p></div>
 `;
-updateCharts(); updateProjection(); updateMonthly(); updateWeekly();
+updateCharts();
+updateProjection();
+updateWeekly();
 }
 
-function updateCharts() {
-const totalNeeds = data.expenses.filter(e=>e.category==="needs").reduce((s,e)=>s+e.amount,0);
-const totalWants = data.expenses.filter(e=>e.category==="wants").reduce((s,e)=>s+e.amount,0);
+// Charts
+function updateCharts(){
+const totalNeeds=data.expenses.filter(e=>e.category==="needs").reduce((s,e)=>s+e.amount,0);
+const totalWants=data.expenses.filter(e=>e.category==="wants").reduce((s,e)=>s+e.amount,0);
 if(spendingChart) spendingChart.destroy();
 if(investChart) investChart.destroy();
-spendingChart = new Chart(document.getElementById("spendingChart"), {type:"pie", data:{labels:["Needs","Wants"],datasets:[{data:[totalNeeds,totalWants],backgroundColor:["#3b82f6","#f59e0b"]}]}, options:{responsive:true}});
-investChart = new Chart(document.getElementById("investChart"), {type:"pie", data:{labels:["Roth","HYSA"],datasets:[{data:[data.roth,data.hysa],backgroundColor:["#10b981","#8b5cf6"]}]}, options:{responsive:true}});
+spendingChart=new Chart(document.getElementById("spendingChart"),{type:"pie",data:{labels:["Needs","Wants"],datasets:[{data:[totalNeeds,totalWants],backgroundColor:["#3b82f6","#f59e0b"]}]},options:{responsive:true}});
+investChart=new Chart(document.getElementById("investChart"),{type:"pie",data:{labels:["Roth","HYSA"],datasets:[{data:[data.roth,data.hysa],backgroundColor:["#10b981","#8b5cf6"]}]},options:{responsive:true}});
 }
 
-function updateProjection() {
-const annualRate=0.07; const years=40; let future=data.roth*Math.pow(1+annualRate,years);
+// Roth Projection
+function updateProjection(){
+const future=data.roth*Math.pow(1+0.07,40);
 document.getElementById("projection").innerText=`$${future.toFixed(0)} at age ~60`;
 }
 
-function updateMonthly() {
-let months={}; data.expenses.forEach(e=>{ let m=e.date.slice(0,7); if(!months[m]) months[m]=0; months[m]+=e.amount; });
-let html=""; for(let m in months){ html+=`<p>${m} — $${months[m].toFixed(2)}</p>`; }
-document.getElementById("monthly").innerHTML=html||"No expenses yet";
-}
-
-function updateWeekly() {
-let start=new Date("2026-03-01"); let end=new Date("2026-08-31"); let weeksHTML="";
+// Weekly Log
+function updateWeekly(){
+let start=new Date("2026-03-01"); let end=new Date("2026-08-31");
+let weeksHTML="";
 while(start<=end){
 let weekStart=new Date(start); let weekEnd=new Date(start); weekEnd.setDate(weekEnd.getDate()+6);
 let weekExpenses=data.expenses.filter(e=>{let d=new Date(e.date); return d>=weekStart && d<=weekEnd; });
-let total=weekExpenses.reduce((s,e)=>s+e.amount,0);
-weeksHTML+=`<div class="border-b py-2"><h4 class="font-bold">Week of ${weekStart.toLocaleDateString()}</h4><p class="text-sm text-gray-600">Total Spent: $${total.toFixed(2)}</p><ul class="text-sm mt-1 space-y-1">${weekExpenses.map(e=>`<li>${e.date} — $${e.amount.toFixed(2)} (${e.category})<br><span class="text-gray-500">${e.note}</span></li>`).join("")}</ul></div>`;
+let totalSpent=weekExpenses.reduce((s,e)=>s+e.amount,0);
+// check if investments met this week
+let investedRoth=0, investedHYSA=0;
+weekExpenses.forEach(e=>{ if(e.category==="needs" || e.category==="wants"){ investedRoth+=0; investedHYSA+=0; } });
+let rothTargetMet=data.roth>=0; // can customize per week if you want
+let hysaTargetMet=data.hysa>=0;
+weeksHTML+=`<div class="border-b py-2">
+<h4 class="font-bold">Week of ${weekStart.toLocaleDateString()}</h4>
+<p class="text-sm text-gray-600">Total Spent: $${totalSpent.toFixed(2)}</p>
+<p class="text-sm">Investments: 
+<span class="inline-block mr-2">${data.roth>=0? "✅":"⬜"} Roth</span>
+<span class="inline-block">${data.hysa>=0? "✅":"⬜"} HYSA</span>
+</p>
+<ul class="text-sm mt-1 space-y-1">
+${weekExpenses.map((e,i)=>`<li>${e.date} — $${e.amount.toFixed(2)} (${e.category})<br><span class="text-gray-500">${e.note}</span></li>`).join("")}
+</ul>
+</div>`;
 start.setDate(start.getDate()+7);
 }
 document.getElementById("weeklyLog").innerHTML=weeksHTML;
 }
 
+// CSV Export
 function exportCSV(){
-let csv="Date,Category,Amount,Note\n"; data.expenses.forEach(e=>{csv+=`${e.date},${e.category},${e.amount},"${e.note}"\n`;});
-const blob=new Blob([csv],{type:"text/csv"}); const url=URL.createObjectURL(blob);
+let csv="Date,Category,Amount,Note\n";
+data.expenses.forEach(e=>{ csv+=`${e.date},${e.category},${e.amount},"${e.note}"\n`; });
+const blob=new Blob([csv],{type:"text/csv"});
+const url=URL.createObjectURL(blob);
 const a=document.createElement("a"); a.href=url; a.download="expenses.csv"; a.click();
 }
 
+// Initialize
 load();
 </script>
 
